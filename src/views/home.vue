@@ -16,16 +16,16 @@
         </el-row>
         <el-row>
           <el-col :span="22" :offset="1">
-            <el-table :data="result" tooltip-effect="dark" style="width: 100%">
+            <el-table :data="userList" tooltip-effect="dark" style="width: 100%">
               <el-table-column type="selection" width="55"></el-table-column>
-              <el-table-column sortable prop="username" width="100" label="用户名"></el-table-column>
+              <el-table-column prop="username" width="100" label="用户名"></el-table-column>
               <el-table-column sortable prop="name" width="80" label="姓名"></el-table-column>
-              <el-table-column sortable prop="phone" label="手机"></el-table-column>
-              <el-table-column sortable prop="email" label="邮箱"></el-table-column>
+              <el-table-column prop="phone" label="手机"></el-table-column>
+              <el-table-column prop="email" label="邮箱"></el-table-column>
               <el-table-column sortable prop="create_time" label="注册日期"></el-table-column>
               <el-table-column prop="is_active" label="状态" width="75">
                 <template slot-scope="scope">
-                  <el-tag type="success">{{scope.row.is_active}}</el-tag>
+                  <el-tag :type="scope.row.is_active == true ? 'success':'danger'">{{scope.row.is_active | formatter}}</el-tag>
                 </template>
               </el-table-column>
               <el-table-column label="操作" width="250">
@@ -37,9 +37,16 @@
             </el-table>
           </el-col>
         </el-row>
+        <el-row>
+          <el-col :span="24">
+            <div class="block">
+              <el-pagination layout="prev, pager, next" :total="total" :page-size="5" @current-change="pageChange"></el-pagination>
+            </div>
+          </el-col>
+        </el-row>
       </el-main>
     </el-container>
-    <el-dialog title="添加新用户" :visible.sync="addDialog">
+    <el-dialog title="添加新用户" :visible.sync="addDialog" @close="resetForm('addForm')">
       <el-form :model="addForm" :rules="addRules" ref="addForm" label-width="100px">
         <el-form-item label="用户名" prop="username">
           <el-input type="text" v-model="addForm.username" auto-complete="off"></el-input>
@@ -54,7 +61,7 @@
           <el-input type="password" v-model="addForm.repeat_password" auto-complete="off"></el-input>
         </el-form-item>
         <el-form-item label="手机" prop="phone">
-          <el-input type="text" v-model="addForm.phone" auto-complete="off"></el-input>
+          <el-input type="text" v-model.number="addForm.phone" auto-complete="off"></el-input>
         </el-form-item>
         <el-form-item label="邮箱" prop="email">
           <el-input type="text" v-model="addForm.email" auto-complete="off"></el-input>
@@ -63,7 +70,7 @@
           <el-switch v-model="addForm.is_active" auto-complete="off"></el-switch>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" size="small">提交</el-button>
+          <el-button type="primary" size="small" @click="submitForm('addForm')">提交</el-button>
           <el-button size="small" @click="resetForm('addForm')">取消</el-button>
         </el-form-item>
       </el-form>
@@ -71,9 +78,26 @@
   </div>
 </template>
 <script>
+  import axios from 'axios';
   export default {
     name: 'Home',
-    data: function () {
+    mounted: function () {
+      this.getUsers()
+    },
+    //组件渲染完毕后调用getUsers, 来获取所有的用户列表
+    data() {
+      //自定义的验证规则
+      var checkPass = (rule, value, callback) => {
+        if(value === '') {
+            callback(new Error('确认密码不能为空'));
+        }
+        else if(value !== this.addForm.password) {
+            callback(new Error('两次密码输入不一致'));
+        }
+        else {
+            callback();
+        }
+      }
       return {
         //用于收集新增用户的对象
         addForm: {
@@ -89,7 +113,7 @@
         addDialog: false,
         //编辑的对话框
         editDialog: false,
-        result: [
+        userList: [
           {
             username: 'zhangsan',
             name: '张三',
@@ -114,16 +138,85 @@
             create_time: '2017年11月13号',
             is_active: '激活'
           }
-        ]
+        ],
+        //验证规则
+        addRules: {
+          username: [
+            {required: true, message: '请输入用户名', trigger: 'blur'},
+            {min: 3, max: 16, message: '请输入合法的用户名', trigger: 'blur'}
+          ],
+          name: [
+            {required: true, message: '请输入姓名', trigger: 'blur'}
+          ],
+          password: [
+            {required: true, message: '请输入密码', trigger: 'blur'},
+            {min: 6, max: 12, message: '密码长度不合法', trigger: 'blur'}
+          ],
+          repeat_password: [
+            {validator: checkPass, trigger: 'blur'}
+          ],
+          phone: [
+            {requires: true, type: 'number', message: '必须是数字类型', trigger: 'blur'}
+          ],
+          email: [
+            {type: 'email', required: true, message: '必须是合法邮箱格式', trigger: 'blur' },
+          ]
+        },
+        total: 0
       }
     },
     methods: {
-        resetForm: function (formName) {
-          //将弹出框关闭
-          this.addDialog = false
-          //将弹出框里面的内容清空
-          this.$refs[formName].resetFields();
-        }
+      //表单提交
+      submitForm: function (formName) {
+        this.$refs[formName].validate((valid) => {
+            if(valid) {
+              //提交
+              axios.post('/users/create', this.addForm).then(response => {
+                  var res = response.data;
+                  if(res.status == '0') {
+                      //显示成功的消息提示
+                      this.$message.success('新增用户成功');
+                      this.resetForm('addForm');
+                      //重新获取一下数据
+                      this.getUsers();
+                  }
+                  else {
+                      //返回错误的提示消息的时候
+                      this.$message.error(res.message);
+                  }
+              }).catch(err => {
+                  console.log(err);
+              })
+            }
+            else {
+              return false;
+            }
+        })
+      },
+      //清空表单
+      resetForm: function (formName) {
+        //将弹出框关闭
+        this.addDialog = false
+        //将弹出框里面的内容清空
+        this.$refs[formName].resetFields();
+      },
+      getUsers: function (page) {
+        axios.get('/users/getUsers', {
+            params: {
+                page: page || 1,
+                pageSize: 5
+            }
+        }).then(response => {
+            var res = response.data;
+            this.userList = res.userList;
+            this.total = res.count;
+        }).catch(err => {
+            console.log(err);
+        })
+      },
+      pageChange: function (value) {
+        this.getUsers(value);
+      }
     }
   }
 </script>
@@ -142,5 +235,9 @@
   }
   .margin40 {
     margin-top: 40px;
+  }
+  .block {
+    margin: 20px 180px 0;
+    float: right;
   }
 </style>
