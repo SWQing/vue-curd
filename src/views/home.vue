@@ -9,14 +9,14 @@
           <el-col :span="22">
             <div class="fr margin40">
               <el-button size="small" type="primary" icon="el-icon-plus" @click="addDialog = true">添加</el-button>
-              <el-button size="small" type="danger" icon="el-icon-delete">删除</el-button>
+              <el-button size="small" type="danger" icon="el-icon-delete" @click="deletesButton">删除</el-button>
             </div>
           </el-col>
           <div class="clearfix"></div>
         </el-row>
         <el-row>
           <el-col :span="22" :offset="1">
-            <el-table :data="userList" tooltip-effect="dark" style="width: 100%">
+            <el-table :data="userList" tooltip-effect="dark" style="width: 100%" @selection-change="selectButton">
               <el-table-column type="selection" width="55"></el-table-column>
               <el-table-column prop="username" width="100" label="用户名"></el-table-column>
               <el-table-column sortable prop="name" width="80" label="姓名"></el-table-column>
@@ -30,8 +30,8 @@
               </el-table-column>
               <el-table-column label="操作" width="250">
                 <template slot-scope="scope">
-                  <el-button type="success" size="small">编辑</el-button>
-                  <el-button type="danger" size="small">删除</el-button>
+                  <el-button type="success" size="small"  @click="setUser(scope.row)">编辑</el-button>
+                  <el-button type="danger" size="small" @click="deleteUser(scope.row)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
@@ -75,6 +75,26 @@
         </el-form-item>
       </el-form>
     </el-dialog>
+    <el-dialog title="修改用户" :visible.sync="editDialog" @close="resetForm('editForm')">
+      <el-form :model="editForm" :rules="addRules" ref="editForm" label-width="100px">
+        <el-form-item label="姓名" prop="name">
+          <el-input type="text" v-model="editForm.name"></el-input>
+        </el-form-item>
+        <el-form-item label="手机" prop="phone">
+          <el-input type="text" v-model.number="editForm.phone"></el-input>
+        </el-form-item>
+        <el-form-item label="邮箱" prop="email">
+          <el-input type="text" v-model="editForm.email"></el-input>
+        </el-form-item>
+        <el-form-item label="是否启用" prop="is_active">
+          <el-switch v-model="editForm.is_active"></el-switch>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" size="small" @click="updateUser">修改</el-button>
+          <el-button size="small" @click="resetForm('editForm')">取消</el-button>
+        </el-form-item>
+      </el-form>
+    </el-dialog>
   </div>
 </template>
 <script>
@@ -108,6 +128,14 @@
           phone: '',//电话
           email: '',//邮箱
           is_active: false//状态
+        },
+        //用于收集修改用户的对象
+        editForm: {
+          id: '',
+          name: '',
+          phone: '',
+          email: '',
+          is_active: null,
         },
         //添加的对话框
         addDialog: false,
@@ -155,12 +183,16 @@
           repeat_password: [
             {validator: checkPass, trigger: 'blur'}
           ],
-          phone: [
-            {requires: true, type: 'number', message: '必须是数字类型', trigger: 'blur'}
+          phone:[
+//            { required: true, message: '请输入手机号', trigger: 'blur' },
+//            { pattern: /^1[34578]\d{9}$/, message: '目前只支持中国大陆的手机号码' }
           ],
           email: [
             {type: 'email', required: true, message: '必须是合法邮箱格式', trigger: 'blur' },
           ]
+        },
+        multipleSelection: {
+
         },
         total: 0
       }
@@ -195,8 +227,13 @@
       },
       //清空表单
       resetForm: function (formName) {
-        //将弹出框关闭
-        this.addDialog = false
+          if(formName == 'addForm') {
+            //将新增的弹出框关闭
+            this.addDialog = false
+          } else if(formName == 'editForm') {
+              //将编辑的弹出框关闭
+              this.editDialog = false;
+          }
         //将弹出框里面的内容清空
         this.$refs[formName].resetFields();
       },
@@ -216,6 +253,80 @@
       },
       pageChange: function (value) {
         this.getUsers(value);
+      },
+      //单个删除
+      deleteUser: function (row) {
+          this.$confirm('此操作将永久删除用户'+ row.username +', 是否继续?', '提示', {
+            confirmButtonText: '确定',
+            cancelButtonText: '取消',
+            type: 'warning'
+          }).then(() => {
+            axios.get('/users/delete', {
+              params: {
+                id: row._id
+              }
+            }).then(response => {
+              if(response.data.message == 'success') {
+                this.getUsers();
+                this.$message.success('删除成功');
+              }
+            }).catch(err => {
+              console.log(err);
+            })
+          }).catch(() => {
+            this.$message.info
+
+            ('已取消删除');
+          });
+      },
+      //删除收集个数
+      selectButton: function (val) {
+        this.multipleSelection = val;
+      },
+      //删除多个
+      deletesButton:function () {
+        this.$confirm('此操作将永久删除该文件, 是否继续?', '提示', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }).then(() => {
+          axios.post('/users/deletes', this.multipleSelection).then(data=>{
+            if (data.data.status == '0') {
+              this.$message({
+                type: 'success',
+                message: '删除成功!'
+              });
+              this.getUsers()
+            }
+          })
+        }).catch(() => {
+          this.$message({
+            type: 'info',
+            message: '已取消删除'
+          });
+        })
+    },
+    //编辑
+      setUser: function (row) {
+        //编辑的弹出框开启
+        this.editDialog = true;
+        this.editForm._id = row._id;
+        this.editForm.name = row.name;
+        this.editForm.phone = row.phone;
+        this.editForm.email = row.email;
+        this.editForm.is_active = row.is_active;
+      },
+      updateUser: function () {
+        axios.post('/users/updateUser', this.editForm).then(response => {
+            var res = response.data;
+            if(res.status == '0') {
+                this.resetForm('editForm');
+                this.$message.success('修改成功');
+                this.getUsers();
+            }
+        }).catch(err => {
+            console.log(err);
+        })
       }
     }
   }
